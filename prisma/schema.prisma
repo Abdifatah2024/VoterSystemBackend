@@ -1,0 +1,44 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider          = "postgresql"
+  url               = env("DATABASE_URL")
+  shadowDatabaseUrl = env("SHADOW_DATABASE_URL")
+}
+
+model User {
+  id          Int      @id @default(autoincrement())
+  fullName    String
+  email       String   @unique
+  phoneNumber String?  @unique
+  password    String
+  role        Role     @default(USER)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+enum Role {
+  ADMIN
+  USER
+}
+
+model Voter {
+  id                        Int      @id @default(autoincrement())
+  fullName                  String
+  gender                    String
+  dateOfBirth               DateTime
+  phoneNumber               String
+  city                      String
+  district                  String
+  address                   String
+  hasVoterId                Boolean  @default(false)
+  registeredPlace           String? // Goobta uu hore uga diiwaangashanaa (haddii uu leeyahay)
+  wantsToChangeRegistration Boolean? // Haddii uu doonayo inuu beddelo goobta
+  newRegistrationPlace      String? // Goobta cusub ee uu u wareegayo
+  desiredRegistrationPlace  String? // Goobta uu doonayo qof cusub inuu isdiiwaangeliyo
+  clanTitle                 String
+  clanSubtitle              String
+  createdAt                 DateTime @default(now())
+}
