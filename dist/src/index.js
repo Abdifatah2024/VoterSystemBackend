@@ -6,8 +6,8 @@ Object.defineProperty(exports, "__esModule", { value: true });
 const express_1 = __importDefault(require("express"));
 const dotenv_1 = __importDefault(require("dotenv"));
 const cors_1 = __importDefault(require("cors"));
-const userRoute_1 = __importDefault(require("./Routes/userRoute"));
-const voter_routes_1 = __importDefault(require("./Routes/voter.routes"));
+const userRoute_1 = __importDefault(require("../Routes/userRoute"));
+const voter_routes_1 = __importDefault(require("../Routes/voter.routes"));
 // Load environment variables from .env
 dotenv_1.default.config();
 // Create Express app
