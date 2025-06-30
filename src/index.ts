@@ -59,7 +59,7 @@ const app = express();
 app.use(
   cors({
     origin: [
-      "https://voter-system-fronend-git-main-abdifatah2024s-projects.vercel.app",
+      "https://voter-system-fronend.vercel.app",
       "http://localhost:5173",
     ],
     credentials: true, // Enable cookies/auth headers if needed
