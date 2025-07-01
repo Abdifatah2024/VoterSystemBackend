@@ -62,7 +62,7 @@ app.use(
       "https://voter-system-fronend.vercel.app",
       "http://localhost:5173",
     ],
-    credentials: true, // Enable cookies/auth headers if needed
+    credentials: true,
   })
 );
 

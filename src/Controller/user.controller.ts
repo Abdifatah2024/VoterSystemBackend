@@ -3,7 +3,8 @@ import { Request, Response } from "express";
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 const prisma = new PrismaClient();
-
+import crypto from "crypto";
+import { AuthRequest } from "../middlewares/middlewares"; // Path to where you defined AuthRequest
 export const register = async (req: Request, res: Response) => {
   try {
     const { fullName, email, password, phoneNumber, role } = req.body;
@@ -19,27 +20,30 @@ export const register = async (req: Request, res: Response) => {
     const user = await prisma.user.create({
       data: {
         fullName,
-        email: email.toLowerCase(), // 👈 Fix here
+        email: email.toLowerCase(),
         password: hashedPassword,
         phoneNumber,
         role: role ?? "USER",
+        mustChangePassword: true, // ✅ Require password change on first login
       },
     });
 
     res.status(201).json({
-      message: "User created successfully.",
+      message:
+        "User created successfully. User must change password at first login.",
       user: {
         id: user.id,
         fullName: user.fullName,
         email: user.email,
         phoneNumber: user.phoneNumber,
         role: user.role,
+        mustChangePassword: user.mustChangePassword,
       },
     });
   } catch (error: any) {
     if (error.code === "P2002") {
       return res.status(409).json({
-        message: `A user with this email or phone number already exists.`,
+        message: "A user with this email or phone number already exists.",
       });
     }
 
@@ -122,6 +126,62 @@ export const generateToken = (user: any) => {
   );
 };
 
+// export const login = async (req: Request, res: Response) => {
+//   try {
+//     const { email, password } = req.body;
+
+//     if (!email || !password) {
+//       return res
+//         .status(400)
+//         .json({ message: "Email and password are required." });
+//     }
+
+//     const user = await prisma.user.findUnique({
+//       where: { email: email.toLowerCase() },
+//     });
+
+//     if (!user) {
+//       return res.status(401).json({ message: "Incorrect email or password." });
+//     }
+
+//     const isPasswordValid = await bcrypt.compare(password, user.password);
+
+//     if (!isPasswordValid) {
+//       return res.status(401).json({ message: "Incorrect email or password." });
+//     }
+
+//     // ✅ If user must change password, send special response
+//     if (user.mustChangePassword) {
+//       return res.status(200).json({
+//         message: "Password change required before logging in.",
+//         requirePasswordChange: true,
+//         user: {
+//           id: user.id,
+//           email: user.email,
+//           fullName: user.fullName,
+//           role: user.role,
+//         },
+//       });
+//     }
+
+//     const token = generateToken(user);
+
+//     return res.status(200).json({
+//       message: "Login successful.",
+//       user: {
+//         id: user.id,
+//         fullName: user.fullName,
+//         email: user.email,
+//         phoneNumber: user.phoneNumber,
+//         role: user.role,
+//       },
+//       Access_token: token,
+//     });
+//   } catch (error) {
+//     console.error("Login error:", error);
+//     return res.status(500).json({ message: "Internal server error." });
+//   }
+// };
 export const login = async (req: Request, res: Response) => {
   try {
     const { email, password } = req.body;
@@ -146,18 +206,22 @@ export const login = async (req: Request, res: Response) => {
       return res.status(401).json({ message: "Incorrect email or password." });
     }
 
+    // ✅ Always generate the token
     const token = generateToken(user);
 
+    // ✅ Always return the token, even if must change password
     return res.status(200).json({
-      message: "Login successful.",
+      message: user.mustChangePassword
+        ? "Password change required before logging in."
+        : "Login successful.",
+      requirePasswordChange: user.mustChangePassword,
+      Access_token: token, // <-- THIS IS WHAT YOU ARE MISSING
       user: {
         id: user.id,
-        fullName: user.fullName,
         email: user.email,
-        phoneNumber: user.phoneNumber,
+        fullName: user.fullName,
         role: user.role,
       },
-      Access_token: token,
     });
   } catch (error) {
     console.error("Login error:", error);
@@ -228,3 +292,80 @@ export const updateUser = async (req: Request, res: Response) => {
   }
 };
 // Create multiple voters
+
+export const changePassword = async (req: AuthRequest, res: Response) => {
+  try {
+    const { oldPassword, newPassword } = req.body;
+
+    if (!oldPassword || !newPassword) {
+      return res
+        .status(400)
+        .json({ message: "Old password and new password are required." });
+    }
+
+    if (!req.user) {
+      return res.status(401).json({ message: "Unauthorized." });
+    }
+
+    const user = await prisma.user.findUnique({
+      where: { id: req.user.id },
+    });
+
+    if (!user) {
+      return res.status(404).json({ message: "User not found." });
+    }
+
+    // ✅ Compare old password
+    const isOldPasswordValid = await bcrypt.compare(oldPassword, user.password);
+    if (!isOldPasswordValid) {
+      return res.status(400).json({ message: "Old password is incorrect." });
+    }
+
+    // ✅ Hash the new password
+    const hashedPassword = await bcrypt.hash(newPassword, 10);
+
+    // ✅ Update password and clear mustChangePassword flag
+    await prisma.user.update({
+      where: { id: user.id },
+      data: {
+        password: hashedPassword,
+        mustChangePassword: false,
+      },
+    });
+
+    return res.json({
+      message: "Password changed successfully. Please log in again.",
+    });
+  } catch (error) {
+    console.error("Change password error:", error);
+    return res.status(500).json({ message: "Internal server error." });
+  }
+};
+
+// Generates a random password
+function generateRandomPassword(length: number = 10): string {
+  return crypto.randomBytes(length).toString("base64").slice(0, length);
+}
+
+/**
+ * Reset user password by Admin
+ */
+export async function adminResetUserPassword(userId: number) {
+  const newPasswordPlain = generateRandomPassword(10);
+
+  // Hash password
+  const hashedPassword = await bcrypt.hash(newPasswordPlain, 10);
+
+  // Update user in database
+  await prisma.user.update({
+    where: { id: userId },
+    data: {
+      password: hashedPassword,
+      mustChangePassword: true,
+      updatedAt: new Date(),
+    },
+  });
+
+  // Return the plain password so admin can share it
+  return newPasswordPlain;
+}

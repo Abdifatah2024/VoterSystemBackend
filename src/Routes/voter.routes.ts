@@ -11,7 +11,10 @@ import {
   getClanReport,
   getChangeRequestsReport,
   getAgeDistributionReport,
+  createMultipleVotersByExcel,
+  getVotersByClan,
 } from "../Controller/Voter.controller";
+import multer from "multer";
 
 const router = express.Router();
 
@@ -19,6 +22,7 @@ const router = express.Router();
 router.post("/create", createVoter);
 router.post("/bulk", createMultipleVoters);
 // Warbixin qabiil iyo farac
+router.get("/by-clan", getVotersByClan);
 router.get("/clan", getClanReport);
 // Warbixin guud
 router.get("/city-district", getCityDistrictReport);
@@ -42,5 +46,14 @@ router.get("/change-requests", getChangeRequestsReport);
 
 // Warbixin da'da
 router.get("/age-distribution", getAgeDistributionReport);
+
+const upload = multer({
+  storage: multer.memoryStorage(),
+});
+router.post(
+  "/upload-excel",
+  upload.single("file"),
+  createMultipleVotersByExcel
+);
 
 export default router;
