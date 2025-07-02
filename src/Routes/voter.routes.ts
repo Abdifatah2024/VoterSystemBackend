@@ -13,12 +13,19 @@ import {
   getAgeDistributionReport,
   createMultipleVotersByExcel,
   getVotersByClan,
+  getBasicVoterInfo,
+  updateBasicVoterInfo,
+  getAllVotersBasicInfo,
+  sendSMSAllVoters,
+  getDemographicsSummary,
+  deleteAllVoters,
 } from "../Controller/Voter.controller";
 import multer from "multer";
 
 const router = express.Router();
 
 // Create voter
+router.delete("/delete-all", deleteAllVoters);
 router.post("/create", createVoter);
 router.post("/bulk", createMultipleVoters);
 // Warbixin qabiil iyo farac
@@ -55,5 +62,10 @@ router.post(
   upload.single("file"),
   createMultipleVotersByExcel
 );
+router.get("/voters/:voterId/basicInfo", getBasicVoterInfo);
+router.put("/voters/:voterId/basic", updateBasicVoterInfo);
+router.get("/voters/basic", getAllVotersBasicInfo);
+router.post("/send-sms-all", sendSMSAllVoters);
+router.get("/demographics/summary", getDemographicsSummary);
 
 export default router;
