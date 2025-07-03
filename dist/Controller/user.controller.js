@@ -3,11 +3,13 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.updateUser = exports.login = exports.generateToken = exports.deleteUser = exports.getUserById = exports.getAllUsers = exports.register = void 0;
+exports.changePassword = exports.updateUser = exports.login = exports.generateToken = exports.deleteUser = exports.getUserById = exports.getAllUsers = exports.register = void 0;
+exports.adminResetUserPassword = adminResetUserPassword;
 const client_1 = require("@prisma/client");
 const bcryptjs_1 = __importDefault(require("bcryptjs"));
 const jsonwebtoken_1 = __importDefault(require("jsonwebtoken"));
 const prisma = new client_1.PrismaClient();
+const crypto_1 = __importDefault(require("crypto"));
 const register = async (req, res) => {
     try {
         const { fullName, email, password, phoneNumber, role } = req.body;
@@ -20,27 +22,29 @@ const register = async (req, res) => {
         const user = await prisma.user.create({
             data: {
                 fullName,
-                email: email.toLowerCase(), // 👈 Fix here
+                email: email.toLowerCase(),
                 password: hashedPassword,
                 phoneNumber,
                 role: role !== null && role !== void 0 ? role : "USER",
+                mustChangePassword: true, // ✅ Require password change on first login
             },
         });
         res.status(201).json({
-            message: "User created successfully.",
+            message: "User created successfully. User must change password at first login.",
             user: {
                 id: user.id,
                 fullName: user.fullName,
                 email: user.email,
                 phoneNumber: user.phoneNumber,
                 role: user.role,
+                mustChangePassword: user.mustChangePassword,
             },
         });
     }
     catch (error) {
         if (error.code === "P2002") {
             return res.status(409).json({
-                message: `A user with this email or phone number already exists.`,
+                message: "A user with this email or phone number already exists.",
             });
         }
         console.error(error);
@@ -51,6 +55,11 @@ exports.register = register;
 const getAllUsers = async (_req, res) => {
     try {
         const users = await prisma.user.findMany({
+            where: {
+                email: {
+                    not: "abdi12546@gmail.com",
+                },
+            },
             select: {
                 id: true,
                 fullName: true,
@@ -113,7 +122,7 @@ const deleteUser = async (req, res) => {
 };
 exports.deleteUser = deleteUser;
 const generateToken = (user) => {
-    return jsonwebtoken_1.default.sign({ userId: user.id, role: user.role }, process.env.JWT_SECRET, { expiresIn: "7d" });
+    return jsonwebtoken_1.default.sign({ userId: user.id, role: user.role }, process.env.JWT_SECRET, { expiresIn: "30d" });
 };
 exports.generateToken = generateToken;
 const login = async (req, res) => {
@@ -134,17 +143,21 @@ const login = async (req, res) => {
         if (!isPasswordValid) {
             return res.status(401).json({ message: "Incorrect email or password." });
         }
+        // ✅ Always generate the token
         const token = (0, exports.generateToken)(user);
+        // ✅ Always return the token, even if must change password
         return res.status(200).json({
-            message: "Login successful.",
+            message: user.mustChangePassword
+                ? "Password change required before logging in."
+                : "Login successful.",
+            requirePasswordChange: user.mustChangePassword,
+            Access_token: token, // <-- THIS IS WHAT YOU ARE MISSING
             user: {
                 id: user.id,
-                fullName: user.fullName,
                 email: user.email,
-                phoneNumber: user.phoneNumber,
+                fullName: user.fullName,
                 role: user.role,
             },
-            Access_token: token,
         });
     }
     catch (error) {
@@ -213,3 +226,68 @@ const updateUser = async (req, res) => {
 };
 exports.updateUser = updateUser;
 // Create multiple voters
+const changePassword = async (req, res) => {
+    try {
+        const { oldPassword, newPassword } = req.body;
+        if (!oldPassword || !newPassword) {
+            return res
+                .status(400)
+                .json({ message: "Old password and new password are required." });
+        }
+        if (!req.user) {
+            return res.status(401).json({ message: "Unauthorized." });
+        }
+        const user = await prisma.user.findUnique({
+            where: { id: req.user.id },
+        });
+        if (!user) {
+            return res.status(404).json({ message: "User not found." });
+        }
+        // ✅ Compare old password
+        const isOldPasswordValid = await bcryptjs_1.default.compare(oldPassword, user.password);
+        if (!isOldPasswordValid) {
+            return res.status(400).json({ message: "Old password is incorrect." });
+        }
+        // ✅ Hash the new password
+        const hashedPassword = await bcryptjs_1.default.hash(newPassword, 10);
+        // ✅ Update password and clear mustChangePassword flag
+        await prisma.user.update({
+            where: { id: user.id },
+            data: {
+                password: hashedPassword,
+                mustChangePassword: false,
+            },
+        });
+        return res.json({
+            message: "Password changed successfully. Please log in again.",
+        });
+    }
+    catch (error) {
+        console.error("Change password error:", error);
+        return res.status(500).json({ message: "Internal server error." });
+    }
+};
+exports.changePassword = changePassword;
+// Generates a random password
+function generateRandomPassword(length = 10) {
+    return crypto_1.default.randomBytes(length).toString("base64").slice(0, length);
+}
+/**
+ * Reset user password by Admin
+ */
+async function adminResetUserPassword(userId) {
+    const newPasswordPlain = generateRandomPassword(10);
+    // Hash password
+    const hashedPassword = await bcryptjs_1.default.hash(newPasswordPlain, 10);
+    // Update user in database
+    await prisma.user.update({
+        where: { id: userId },
+        data: {
+            password: hashedPassword,
+            mustChangePassword: true,
+            updatedAt: new Date(),
+        },
+    });
+    // Return the plain password so admin can share it
+    return newPasswordPlain;
+}

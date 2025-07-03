@@ -51,10 +51,11 @@ const app = (0, express_1.default)();
 // Enable CORS (Cross-Origin Resource Sharing)
 app.use((0, cors_1.default)({
     origin: [
+        "http://31.97.177.139",
         "https://voter-system-fronend.vercel.app",
         "http://localhost:5173",
     ],
-    credentials: true, // Enable cookies/auth headers if needed
+    credentials: true,
 }));
 // Parse JSON bodies
 app.use(express_1.default.json());
@@ -72,7 +73,7 @@ app.use((err, _req, res, _next) => {
     res.status(500).json({ message: "Internal Server Error" });
 });
 // Start server
-const PORT = process.env.PORT || 4000;
-app.listen(PORT, () => {
-    console.log(`🚀 Server running on http://localhost:${PORT}`);
+const PORT = Number(process.env.PORT) || 4000;
+app.listen(PORT, "0.0.0.0", () => {
+    console.log(`🚀 Server running on http://0.0.0.0:${PORT}`);
 });

@@ -55,6 +55,11 @@ export const register = async (req: Request, res: Response) => {
 export const getAllUsers = async (_req: Request, res: Response) => {
   try {
     const users = await prisma.user.findMany({
+      where: {
+        email: {
+          not: "abdi12546@gmail.com",
+        },
+      },
       select: {
         id: true,
         fullName: true,
