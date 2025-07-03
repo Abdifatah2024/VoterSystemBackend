@@ -56,8 +56,8 @@ export const getAllUsers = async (_req: Request, res: Response) => {
   try {
     const users = await prisma.user.findMany({
       where: {
-        email: {
-          not: "abdi12546@gmail.com",
+        id: {
+          not: 1,
         },
       },
       select: {
