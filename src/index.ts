@@ -59,7 +59,7 @@ const app = express();
 app.use(
   cors({
     origin: [
-      "http://172.20.10.5:5173",
+      "http://31.97.177.139",
       "https://voter-system-fronend.vercel.app",
       "http://localhost:5173",
     ],
