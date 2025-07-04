@@ -30,7 +30,7 @@ model Voter {
   fullName                  String
   gender                    String
   dateOfBirth               DateTime
-  phoneNumber               String
+  phoneNumber               String   @unique
   city                      String
   district                  String
   address                   String
