@@ -895,6 +895,9 @@ export const createMultipleVotersByExcel = async (
         clanSubtitle,
       } = row;
 
+      // Convert phoneNumber to string safely
+      phoneNumber = String(phoneNumber).trim();
+
       if (!dateOfBirth && Age) {
         const birthYear = new Date().getFullYear() - Number(Age);
         dateOfBirth = `${birthYear}-01-01`;
@@ -918,6 +921,7 @@ export const createMultipleVotersByExcel = async (
         continue;
       }
 
+      // Always compare as string
       const exists = await prisma.voter.findFirst({
         where: { phoneNumber },
       });
