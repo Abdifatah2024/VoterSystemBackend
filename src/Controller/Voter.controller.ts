@@ -811,6 +811,8 @@ export const createVoter = async (req: Request, res: Response) => {
         desiredRegistrationPlace,
         clanTitle,
         clanSubtitle,
+        //@ts-ignore
+        registeredById: req.user.id, // 👈 link to current user
       },
     });
 
@@ -837,8 +839,16 @@ export const createMultipleVoters = async (req: Request, res: Response) => {
       });
     }
 
+    // Append registeredById to each voter
+    const votersWithUser = votersData.map((voter) => ({
+      ...voter,
+      //@ts-ignore
+      registeredById: req.user.id, // 👈 link to current user
+      dateOfBirth: new Date(voter.dateOfBirth), // ensure Date
+    }));
+
     await prisma.voter.createMany({
-      data: votersData,
+      data: votersWithUser,
       skipDuplicates: true,
     });
 
@@ -895,7 +905,6 @@ export const createMultipleVotersByExcel = async (
         clanSubtitle,
       } = row;
 
-      // Convert phoneNumber to string safely
       phoneNumber = String(phoneNumber).trim();
 
       if (!dateOfBirth && Age) {
@@ -921,7 +930,6 @@ export const createMultipleVotersByExcel = async (
         continue;
       }
 
-      // Always compare as string
       const exists = await prisma.voter.findFirst({
         where: { phoneNumber },
       });
@@ -946,6 +954,8 @@ export const createMultipleVotersByExcel = async (
             address,
             clanTitle,
             clanSubtitle,
+            //@ts-ignore
+            registeredById: req.user.id, // 👈 link to current user
           },
         });
         createdVoters.push(voter);
@@ -1533,5 +1543,84 @@ export const deleteAllVoters = async (req: Request, res: Response) => {
   } catch (error) {
     console.error("Error deleting all voters:", error);
     res.status(500).json({ message: "Internal server error." });
+  }
+};
+
+export const listUsersAndVotersSummary = async (
+  req: Request,
+  res: Response
+) => {
+  try {
+    const { startDate, endDate } = req.query;
+
+    // Build date filter if dates are provided
+    let dateFilter = {};
+    if (startDate && endDate) {
+      dateFilter = {
+        createdAt: {
+          gte: new Date(startDate as string),
+          lte: new Date(endDate as string),
+        },
+      };
+    }
+
+    // Fetch all users with filtered voters
+    const users = await prisma.user.findMany({
+      include: {
+        Voter: {
+          where: dateFilter,
+        },
+      },
+    });
+
+    // Transform data
+    const result = users.map((user) => {
+      const genderSummary = user.Voter.reduce<Record<string, number>>(
+        (acc, voter) => {
+          acc[voter.gender] = (acc[voter.gender] || 0) + 1;
+          return acc;
+        },
+        {}
+      );
+
+      const citySummary = user.Voter.reduce<Record<string, number>>(
+        (acc, voter) => {
+          acc[voter.city] = (acc[voter.city] || 0) + 1;
+          return acc;
+        },
+        {}
+      );
+
+      const districtSummary = user.Voter.reduce<Record<string, number>>(
+        (acc, voter) => {
+          acc[voter.district] = (acc[voter.district] || 0) + 1;
+          return acc;
+        },
+        {}
+      );
+
+      return {
+        userId: user.id,
+        userFullName: user.fullName,
+        email: user.email,
+        totalVoters: user.Voter.length,
+        genderSummary,
+        citySummary,
+        districtSummary,
+        voters: user.Voter.map((v) => ({
+          id: v.id,
+          fullName: v.fullName,
+          gender: v.gender,
+          city: v.city,
+          district: v.district,
+          createdAt: v.createdAt,
+        })),
+      };
+    });
+
+    res.json({ summary: result });
+  } catch (error) {
+    console.error("Error listing users and voters summary:", error);
+    res.status(500).json({ message: "Internal server error" });
   }
 };

@@ -19,14 +19,17 @@ import {
   sendSMSAllVoters,
   getDemographicsSummary,
   deleteAllVoters,
+  listUsersAndVotersSummary,
 } from "../Controller/Voter.controller";
 import multer from "multer";
+import { authenticate } from "../middlewares/middlewares";
 
 const router = express.Router();
 
 // Create voter
+router.get("/UserRegistration/summary", listUsersAndVotersSummary);
 router.delete("/delete-all", deleteAllVoters);
-router.post("/create", createVoter);
+router.post("/create", authenticate, createVoter);
 router.post("/bulk", createMultipleVoters);
 // Warbixin qabiil iyo farac
 router.get("/by-clan", getVotersByClan);
