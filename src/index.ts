@@ -4,49 +4,52 @@ import cors from "cors";
 import userRoutes from "./Routes/userRoute";
 import voterRoutes from "./Routes/voter.routes";
 
-// Load environment variables from .env
 dotenv.config();
 
-// Create Express app
 const app = express();
 
-// Enable CORS (Cross-Origin Resource Sharing)
+/** Allowed frontends (no spaces, exact origins) */
+const ALLOWED_ORIGINS = new Set<string>([
+  "https://dhimbiil.online",
+  "http://dhimbiil.online",
+  "https://www.dhimbiil.online",
+  "http://www.dhimbiil.online",
+  "http://localhost:5173",
+  "http://31.97.177.139" // if you actually open the site by IP in your browser
+]);
+
 app.use(
   cors({
-    origin: [
-      "http://31.97.177.139",
-      "https://	dhimbiil.online",
-      "http://	dhimbiil.online",
-      "http://localhost:5173",
-    ],
+    origin: (origin, cb) => {
+      // allow non-browser requests (like curl/postman with no Origin)
+      if (!origin) return cb(null, true);
+      if (ALLOWED_ORIGINS.has(origin)) return cb(null, true);
+      return cb(new Error(`Not allowed by CORS: ${origin}`));
+    },
     credentials: true,
+    methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    allowedHeaders: ["Content-Type", "Authorization"]
   })
 );
 
-// Parse JSON bodies
+// (optional) explicitly handle OPTIONS for legacy proxies
+app.options("*", cors());
+
 app.use(express.json());
 
-// Health check
 app.get("/", (_req: Request, res: Response) => {
   res.send("API is running ✅");
 });
 
-// User routes
 app.use("/api/users", userRoutes);
-
-// Voter routes
 app.use("/api/voters", voterRoutes);
 
-// Global error handler
 app.use((err: Error, _req: Request, res: Response, _next: NextFunction) => {
   console.error("Unexpected error:", err);
   res.status(500).json({ message: "Internal Server Error" });
 });
 
-// Start server
-
 const PORT = Number(process.env.PORT) || 4000;
-
 app.listen(PORT, "0.0.0.0", () => {
   console.log(`🚀 Server running on http://0.0.0.0:${PORT}`);
 });
