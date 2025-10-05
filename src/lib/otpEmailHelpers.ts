@@ -92,7 +92,7 @@ export async function sendOtpEmail(toEmail: string, code: string): Promise<void>
   const info = await transporter.sendMail({
     from: `Muuse Dhimbiil System <${user}>`,
     to: toEmail,
-    subject: "Your Horyaal OTP Code",
+    subject: "Your Muuse dhimbil system OTP Code",
     text: `Your verification code is ${code}. It expires in 5 minutes.`,
     html: `
       <div style="font-family:Arial,sans-serif;max-width:520px;margin:auto;padding:16px;background:#fff">
