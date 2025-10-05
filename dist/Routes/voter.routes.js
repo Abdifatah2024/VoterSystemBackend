@@ -6,10 +6,12 @@ Object.defineProperty(exports, "__esModule", { value: true });
 const express_1 = __importDefault(require("express"));
 const Voter_controller_1 = require("../Controller/Voter.controller");
 const multer_1 = __importDefault(require("multer"));
+const middlewares_1 = require("../middlewares/middlewares");
 const router = express_1.default.Router();
 // Create voter
+router.get("/UserRegistration/summary", Voter_controller_1.listUsersAndVotersSummary);
 router.delete("/delete-all", Voter_controller_1.deleteAllVoters);
-router.post("/create", Voter_controller_1.createVoter);
+router.post("/create", middlewares_1.authenticate, Voter_controller_1.createVoter);
 router.post("/bulk", Voter_controller_1.createMultipleVoters);
 // Warbixin qabiil iyo farac
 router.get("/by-clan", Voter_controller_1.getVotersByClan);

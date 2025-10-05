@@ -43,7 +43,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.deleteAllVoters = exports.getDemographicsSummary = exports.sendSMSAllVoters = exports.getAllVotersBasicInfo = exports.updateBasicVoterInfo = exports.getBasicVoterInfo = exports.getVotersByClan = exports.createMultipleVotersByExcel = exports.getAgeDistributionReport = exports.getChangeRequestsReport = exports.getClanReport = exports.getCityDistrictReport = exports.getSummaryReport = exports.deleteVoter = exports.updateVoter = exports.getVoterById = exports.getAllVoters = exports.createMultipleVoters = exports.createVoter = exports.upload = void 0;
+exports.listUsersAndVotersSummary = exports.deleteAllVoters = exports.getDemographicsSummary = exports.sendSMSAllVoters = exports.getAllVotersBasicInfo = exports.updateBasicVoterInfo = exports.getBasicVoterInfo = exports.getVotersByClan = exports.getAgeDistributionReport = exports.getChangeRequestsReport = exports.getClanReport = exports.getCityDistrictReport = exports.getSummaryReport = exports.deleteVoter = exports.updateVoter = exports.getVoterById = exports.getAllVoters = exports.createMultipleVotersByExcel = exports.createMultipleVoters = exports.createVoter = exports.upload = void 0;
 const client_1 = require("@prisma/client");
 const prisma = new client_1.PrismaClient();
 const date_fns_1 = require("date-fns");
@@ -52,6 +52,9 @@ const XLSX = __importStar(require("xlsx"));
 const sendTelesomSMS_1 = require("../Utils/sendTelesomSMS");
 exports.upload = (0, multer_1.default)({ storage: multer_1.default.memoryStorage() });
 // Create voter
+/**
+ * Create voter with unique phoneNumber check
+ */
 const createVoter = async (req, res) => {
     try {
         const { fullName, gender, dateOfBirth, phoneNumber, city, district, address, hasVoterId, registeredPlace, wantsToChangeRegistration, newRegistrationPlace, desiredRegistrationPlace, clanTitle, clanSubtitle, } = req.body;
@@ -67,6 +70,14 @@ const createVoter = async (req, res) => {
             return res
                 .status(400)
                 .json({ message: "Please provide all required fields." });
+        }
+        const existing = await prisma.voter.findFirst({
+            where: { phoneNumber },
+        });
+        if (existing) {
+            return res
+                .status(409)
+                .json({ message: "A voter with this phone number already exists." });
         }
         const voter = await prisma.voter.create({
             data: {
@@ -84,6 +95,8 @@ const createVoter = async (req, res) => {
                 desiredRegistrationPlace,
                 clanTitle,
                 clanSubtitle,
+                //@ts-ignore
+                registeredById: req.user.id, // 👈 link to current user
             },
         });
         res.status(201).json({
@@ -97,7 +110,9 @@ const createVoter = async (req, res) => {
     }
 };
 exports.createVoter = createVoter;
-// Create multiple voters
+/**
+ * Create multiple voters via JSON array, skip duplicates at DB level
+ */
 const createMultipleVoters = async (req, res) => {
     try {
         const { votersData } = req.body;
@@ -106,11 +121,19 @@ const createMultipleVoters = async (req, res) => {
                 message: "votersData must be a non-empty array.",
             });
         }
+        // Append registeredById to each voter
+        const votersWithUser = votersData.map((voter) => ({
+            ...voter,
+            //@ts-ignore
+            registeredById: req.user.id, // 👈 link to current user
+            dateOfBirth: new Date(voter.dateOfBirth), // ensure Date
+        }));
         await prisma.voter.createMany({
-            data: votersData,
+            data: votersWithUser,
+            skipDuplicates: true,
         });
         res.status(201).json({
-            message: `${votersData.length} voters created successfully.`,
+            message: `${votersData.length} voters created successfully (duplicates skipped).`,
         });
     }
     catch (error) {
@@ -121,6 +144,96 @@ const createMultipleVoters = async (req, res) => {
     }
 };
 exports.createMultipleVoters = createMultipleVoters;
+/**
+ * Create multiple voters via Excel, skip duplicates manually
+ */
+const createMultipleVotersByExcel = async (req, res) => {
+    try {
+        if (!req.file) {
+            return res.status(400).json({ message: "No file uploaded" });
+        }
+        const workbook = XLSX.read(req.file.buffer, { type: "buffer" });
+        const sheetName = workbook.SheetNames[0];
+        const worksheet = XLSX.utils.sheet_to_json(workbook.Sheets[sheetName]);
+        if (!Array.isArray(worksheet) || worksheet.length === 0) {
+            return res.status(400).json({
+                message: "Excel file is empty or invalid",
+            });
+        }
+        const createdVoters = [];
+        const skippedVoters = [];
+        for (let i = 0; i < worksheet.length; i++) {
+            const row = worksheet[i];
+            const rowIndex = i + 2;
+            let { fullName, gender, dateOfBirth, Age, phoneNumber, city, district, address, clanTitle, clanSubtitle, } = row;
+            phoneNumber = String(phoneNumber).trim();
+            if (!dateOfBirth && Age) {
+                const birthYear = new Date().getFullYear() - Number(Age);
+                dateOfBirth = `${birthYear}-01-01`;
+            }
+            if (!fullName ||
+                !gender ||
+                !dateOfBirth ||
+                !phoneNumber ||
+                !city ||
+                !district ||
+                !address ||
+                !clanTitle ||
+                !clanSubtitle) {
+                skippedVoters.push({
+                    row: rowIndex,
+                    reason: "Missing required fields",
+                });
+                continue;
+            }
+            const exists = await prisma.voter.findFirst({
+                where: { phoneNumber },
+            });
+            if (exists) {
+                skippedVoters.push({
+                    row: rowIndex,
+                    reason: "Phone number already exists",
+                });
+                continue;
+            }
+            try {
+                const voter = await prisma.voter.create({
+                    data: {
+                        fullName,
+                        gender,
+                        dateOfBirth: new Date(dateOfBirth),
+                        phoneNumber,
+                        city,
+                        district,
+                        address,
+                        clanTitle,
+                        clanSubtitle,
+                        //@ts-ignore
+                        registeredById: req.user.id, // 👈 link to current user
+                    },
+                });
+                createdVoters.push(voter);
+            }
+            catch (error) {
+                console.error(`Row ${rowIndex} error:`, error);
+                skippedVoters.push({
+                    row: rowIndex,
+                    reason: "Database error during insert",
+                });
+            }
+        }
+        res.status(201).json({
+            message: `${createdVoters.length} voters created successfully.`,
+            created: createdVoters,
+            skippedDetails: skippedVoters,
+        });
+    }
+    catch (error) {
+        console.error(error);
+        res.status(500).json({ message: "Internal server error." });
+    }
+};
+exports.createMultipleVotersByExcel = createMultipleVotersByExcel;
 // Get all voters
 const getAllVoters = async (_req, res) => {
     try {
@@ -345,84 +458,6 @@ const getAgeDistributionReport = async (_req, res) => {
 };
 exports.getAgeDistributionReport = getAgeDistributionReport;
 // Create multiple voters by Excel
-const createMultipleVotersByExcel = async (req, res) => {
-    try {
-        if (!req.file) {
-            return res.status(400).json({ message: "No file uploaded" });
-        }
-        const workbook = XLSX.read(req.file.buffer, { type: "buffer" });
-        const sheetName = workbook.SheetNames[0];
-        const worksheet = workbook.Sheets[sheetName];
-        const votersData = XLSX.utils.sheet_to_json(worksheet);
-        if (!Array.isArray(votersData) || votersData.length === 0) {
-            return res.status(400).json({
-                message: "Excel file is empty or invalid",
-            });
-        }
-        const createdVoters = [];
-        const skippedVoters = [];
-        for (let i = 0; i < votersData.length; i++) {
-            const row = votersData[i];
-            const rowIndex = i + 2;
-            let { fullName, gender, dateOfBirth, Age, phoneNumber, city, district, address, clanTitle, clanSubtitle, } = row;
-            if (!dateOfBirth && Age) {
-                const currentYear = new Date().getFullYear();
-                const birthYear = currentYear - Number(Age);
-                dateOfBirth = `${birthYear}-01-01`;
-            }
-            if (!fullName ||
-                !gender ||
-                !dateOfBirth ||
-                !phoneNumber ||
-                !city ||
-                !district ||
-                !address ||
-                !clanTitle ||
-                !clanSubtitle) {
-                skippedVoters.push({
-                    row: rowIndex,
-                    reason: "Missing required fields",
-                });
-                continue;
-            }
-            try {
-                const voter = await prisma.voter.create({
-                    data: {
-                        fullName,
-                        gender,
-                        dateOfBirth: new Date(dateOfBirth),
-                        phoneNumber,
-                        city,
-                        district,
-                        address,
-                        clanTitle,
-                        clanSubtitle,
-                    },
-                });
-                createdVoters.push(voter);
-            }
-            catch (error) {
-                console.error(`Row ${rowIndex} error:`, error);
-                skippedVoters.push({
-                    row: rowIndex,
-                    reason: "Database error during insert",
-                });
-            }
-        }
-        res.status(201).json({
-            message: `${createdVoters.length} voters created successfully.`,
-            created: createdVoters,
-            skippedDetails: skippedVoters,
-        });
-    }
-    catch (error) {
-        console.error(error);
-        res.status(500).json({
-            message: "Internal server error.",
-        });
-    }
-};
-exports.createMultipleVotersByExcel = createMultipleVotersByExcel;
 // Get voters by clan
 const getVotersByClan = async (req, res) => {
     try {
@@ -724,3 +759,64 @@ const deleteAllVoters = async (req, res) => {
     }
 };
 exports.deleteAllVoters = deleteAllVoters;
+const listUsersAndVotersSummary = async (req, res) => {
+    try {
+        const { startDate, endDate } = req.query;
+        // Build date filter if dates are provided
+        let dateFilter = {};
+        if (startDate && endDate) {
+            dateFilter = {
+                createdAt: {
+                    gte: new Date(startDate),
+                    lte: new Date(endDate),
+                },
+            };
+        }
+        // Fetch all users with filtered voters
+        const users = await prisma.user.findMany({
+            include: {
+                Voter: {
+                    where: dateFilter,
+                },
+            },
+        });
+        // Transform data
+        const result = users.map((user) => {
+            const genderSummary = user.Voter.reduce((acc, voter) => {
+                acc[voter.gender] = (acc[voter.gender] || 0) + 1;
+                return acc;
+            }, {});
+            const citySummary = user.Voter.reduce((acc, voter) => {
+                acc[voter.city] = (acc[voter.city] || 0) + 1;
+                return acc;
+            }, {});
+            const districtSummary = user.Voter.reduce((acc, voter) => {
+                acc[voter.district] = (acc[voter.district] || 0) + 1;
+                return acc;
+            }, {});
+            return {
+                userId: user.id,
+                userFullName: user.fullName,
+                email: user.email,
+                totalVoters: user.Voter.length,
+                genderSummary,
+                citySummary,
+                districtSummary,
+                voters: user.Voter.map((v) => ({
+                    id: v.id,
+                    fullName: v.fullName,
+                    gender: v.gender,
+                    city: v.city,
+                    district: v.district,
+                    createdAt: v.createdAt,
+                })),
+            };
+        });
+        res.json({ summary: result });
+    }
+    catch (error) {
+        console.error("Error listing users and voters summary:", error);
+        res.status(500).json({ message: "Internal server error" });
+    }
+};
+exports.listUsersAndVotersSummary = listUsersAndVotersSummary;
