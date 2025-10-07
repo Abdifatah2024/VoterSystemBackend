@@ -51,34 +51,43 @@ const multer_1 = __importDefault(require("multer"));
 const XLSX = __importStar(require("xlsx"));
 const sendTelesomSMS_1 = require("../Utils/sendTelesomSMS");
 exports.upload = (0, multer_1.default)({ storage: multer_1.default.memoryStorage() });
-// Create voter
 /**
- * Create voter with unique phoneNumber check
+ * Create a new voter (registered by the logged-in user)
  */
 const createVoter = async (req, res) => {
+    var _a, _b;
     try {
-        const { fullName, gender, dateOfBirth, phoneNumber, city, district, address, hasVoterId, registeredPlace, wantsToChangeRegistration, newRegistrationPlace, desiredRegistrationPlace, clanTitle, clanSubtitle, } = req.body;
+        // ✅ Ensure authenticated user
+        const userId = (_a = req.user) === null || _a === void 0 ? void 0 : _a.id;
+        if (!userId) {
+            return res.status(401).json({ message: "Unauthorized: Missing user ID" });
+        }
+        // ✅ Extract request data
+        const { fullName, gender, dateOfBirth, // should be ISO string like "2005-10-06"
+        phoneNumber, city, district, address, hasVoterId = false, registeredPlace = null, wantsToChangeRegistration = null, newRegistrationPlace = null, desiredRegistrationPlace = null, clanTitle, clanSubtitle, } = (_b = req.body) !== null && _b !== void 0 ? _b : {};
+        // ✅ Validate required fields
         if (!fullName ||
             !gender ||
             !dateOfBirth ||
             !phoneNumber ||
             !city ||
             !district ||
-            !address ||
             !clanTitle ||
             !clanSubtitle) {
-            return res
-                .status(400)
-                .json({ message: "Please provide all required fields." });
+            return res.status(400).json({
+                message: "Missing required fields. Please provide fullName, gender, dateOfBirth, phoneNumber, city, district, clanTitle, and clanSubtitle.",
+            });
         }
-        const existing = await prisma.voter.findFirst({
+        // ✅ Check if phone number already exists
+        const existing = await prisma.voter.findUnique({
             where: { phoneNumber },
         });
         if (existing) {
-            return res
-                .status(409)
-                .json({ message: "A voter with this phone number already exists." });
+            return res.status(409).json({
+                message: "A voter with this phone number already exists.",
+            });
         }
+        // ✅ Create voter record
         const voter = await prisma.voter.create({
             data: {
                 fullName,
@@ -88,25 +97,40 @@ const createVoter = async (req, res) => {
                 city,
                 district,
                 address,
-                hasVoterId,
+                hasVoterId: Boolean(hasVoterId),
                 registeredPlace,
                 wantsToChangeRegistration,
                 newRegistrationPlace,
                 desiredRegistrationPlace,
                 clanTitle,
                 clanSubtitle,
-                //@ts-ignore
-                registeredById: req.user.id, // 👈 link to current user
+                // ✅ Relation (Required)
+                registeredById: userId, // Option A (using FK directly)
+                // OR: registeredBy: { connect: { id: userId } }, // Option B
+            },
+            include: {
+                registeredBy: {
+                    select: {
+                        id: true,
+                        fullName: true,
+                        email: true,
+                        role: true,
+                    },
+                },
             },
         });
-        res.status(201).json({
-            message: "Voter created successfully.",
+        // ✅ Return success response
+        return res.status(201).json({
+            message: "Voter successfully registered.",
             voter,
         });
     }
     catch (error) {
-        console.error(error);
-        res.status(500).json({ message: "Internal server error." });
+        console.error("❌ Error creating voter:", error);
+        return res.status(500).json({
+            message: "Server error while creating voter.",
+            error: error.message,
+        });
     }
 };
 exports.createVoter = createVoter;

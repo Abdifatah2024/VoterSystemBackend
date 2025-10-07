@@ -8,33 +8,32 @@ datasource db {
   shadowDatabaseUrl = env("SHADOW_DATABASE_URL")
 }
 
-// --- Your existing enums ---
+// keep your existing generator & datasource
+
 enum Role {
   ADMIN
   USER
   Teacher
 }
 
-// --- Your updated User model ---
 model User {
-  id                 Int      @id @default(autoincrement())
+  id                 Int               @id @default(autoincrement())
   fullName           String
-  email              String   @unique
-  phoneNumber        String?  @unique
+  email              String            @unique
+  phoneNumber        String?           @unique
   password           String
-  role               Role     @default(USER)
-  mustChangePassword Boolean  @default(true)
-  createdAt          DateTime @default(now())
-  updatedAt          DateTime @updatedAt
+  role               Role              @default(USER)
+  mustChangePassword Boolean           @default(true)
+  createdAt          DateTime          @default(now())
+  updatedAt          DateTime          @updatedAt
 
-  // ✅ OTP relation
-  otps OneTimePassword[]
-
-  // Your relation
-  Voter Voter[]
+  // ✅ Relations
+  otps   OneTimePassword[]
+  Voter  Voter[]
+  // NEW: user can have many sessions over time (but only 1 active at a time by policy)
+  sessions Session[]
 }
 
-// --- OTP support enums ---
 enum OtpPurpose {
   LOGIN
   PASSWORD_RESET
@@ -46,15 +45,14 @@ enum OtpChannel {
   SMS
 }
 
-// --- OTP model ---
 model OneTimePassword {
   id          Int        @id @default(autoincrement())
   user        User       @relation(fields: [userId], references: [id], onDelete: Cascade)
   userId      Int
   purpose     OtpPurpose
   channel     OtpChannel
-  destination String // the email or phone used
-  codeHash    String // bcrypt/argon2 hash of numeric code
+  destination String
+  codeHash    String
   expiresAt   DateTime
   consumedAt  DateTime?
   attempts    Int        @default(0)
@@ -65,25 +63,6 @@ model OneTimePassword {
   @@index([userId, purpose, expiresAt])
   @@index([destination])
 }
-
-// model Voter {
-//   id                        Int      @id @default(autoincrement())
-//   fullName                  String
-//   gender                    String
-//   dateOfBirth               DateTime
-//   phoneNumber               String   @unique
-//   city                      String
-//   district                  String
-//   address                   String
-//   hasVoterId                Boolean  @default(false)
-//   registeredPlace           String? // Goobta uu hore uga diiwaangashanaa (haddii uu leeyahay)
-//   wantsToChangeRegistration Boolean? // Haddii uu doonayo inuu beddelo goobta
-//   newRegistrationPlace      String? // Goobta cusub ee uu u wareegayo
-//   desiredRegistrationPlace  String? // Goobta uu doonayo qof cusub inuu isdiiwaangeliyo
-//   clanTitle                 String
-//   clanSubtitle              String
-//   createdAt                 DateTime @default(now())
-// }
 
 model Voter {
   id                        Int      @id @default(autoincrement())
@@ -102,6 +81,22 @@ model Voter {
   clanTitle                 String
   clanSubtitle              String
   createdAt                 DateTime @default(now())
-  registeredById            Int // New: FK to User
+  registeredById            Int
   registeredBy              User     @relation(fields: [registeredById], references: [id])
+}
+
+// NEW: session table to validate tokens
+model Session {
+  id           String    @id @default(cuid())
+  userId       Int
+  user         User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  deviceId     String
+  userAgent    String?
+  ip           String?
+  createdAt    DateTime  @default(now())
+  lastActiveAt DateTime  @updatedAt
+  revokedAt    DateTime?
+
+  @@index([userId, revokedAt])
+  @@index([deviceId, userId])
 }

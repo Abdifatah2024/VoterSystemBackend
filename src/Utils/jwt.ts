@@ -45,54 +45,42 @@
 //     return null;
 //   }
 // }
-// src/Utils/jwt.ts
-import jwt, { type Secret, type SignOptions } from "jsonwebtoken";
+import jwt from "jsonwebtoken";
 import dotenv from "dotenv";
 
 dotenv.config();
 
-const JWT_SECRET: Secret = (process.env.JWT_SECRET || "your_fallback_secret");
-// You can override via env: JWT_EXPIRES_IN=5h
-const DEFAULT_EXPIRES_IN: SignOptions["expiresIn"] =
-  (process.env.JWT_EXPIRES_IN as SignOptions["expiresIn"]) || "5h";
+const JWT_SECRET = process.env.JWT_SECRET || "your_fallback_secret";
+const TOKEN_EXPIRY = "7d";
 
 export interface JwtPayload {
   id: number;
   email: string;
   role: string;
   fullName?: string;
+  sessionId?: string; // ✅ new
 }
 
-// include iat/exp on the decoded object
-export type DecodedToken = JwtPayload & { iat: number; exp: number };
-
-/**
- * Generate a signed JWT token (default 5h).
- * `expiresIn` accepts values like "30m", "5h", "7d" or a number (seconds).
- */
-export function generateToken(
-  user: JwtPayload,
-  expiresIn?: SignOptions["expiresIn"]
-): string {
-  const payload: JwtPayload = {
+// ✅ Generate token that includes session ID
+export function generateToken(user: JwtPayload): string {
+  const payload = {
     id: user.id,
     email: user.email,
     role: user.role,
     fullName: user.fullName,
+    sessionId: user.sessionId, // include here
   };
 
-  const opts: SignOptions = {
+  return jwt.sign(payload, JWT_SECRET, {
+    expiresIn: TOKEN_EXPIRY,
     algorithm: "HS256",
-    expiresIn: expiresIn ?? DEFAULT_EXPIRES_IN,
-  };
-
-  return jwt.sign(payload, JWT_SECRET, opts);
+  });
 }
 
-/** Verify and decode a JWT token. Returns null if invalid/expired. */
-export function verifyToken(token: string): DecodedToken | null {
+// ✅ Verify token
+export function verifyToken(token: string): JwtPayload | null {
   try {
-    return jwt.verify(token, JWT_SECRET) as DecodedToken;
+    return jwt.verify(token, JWT_SECRET) as JwtPayload;
   } catch (err) {
     console.error("JWT verification failed:", err);
     return null;

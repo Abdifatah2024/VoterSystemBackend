@@ -750,25 +750,120 @@ export const upload = multer({ storage: multer.memoryStorage() });
 /**
  * Create voter with unique phoneNumber check
  */
-export const createVoter = async (req: Request, res: Response) => {
+// export const createVoter = async (req: Request, res: Response) => {
+//   try {
+//     const {
+//       fullName,
+//       gender,
+//       dateOfBirth,
+//       phoneNumber,
+//       city,
+//       district,
+//       address,
+//       hasVoterId,
+//       registeredPlace,
+//       wantsToChangeRegistration,
+//       newRegistrationPlace,
+//       desiredRegistrationPlace,
+//       clanTitle,
+//       clanSubtitle,
+//     } = req.body;
+
+//     if (
+//       !fullName ||
+//       !gender ||
+//       !dateOfBirth ||
+//       !phoneNumber ||
+//       !city ||
+//       !district ||
+//       !address ||
+//       !clanTitle ||
+//       !clanSubtitle
+//     ) {
+//       return res
+//         .status(400)
+//         .json({ message: "Please provide all required fields." });
+//     }
+
+//     const existing = await prisma.voter.findFirst({
+//       where: { phoneNumber },
+//     });
+
+//     if (existing) {
+//       return res
+//         .status(409)
+//         .json({ message: "A voter with this phone number already exists." });
+//     }
+
+//     const voter = await prisma.voter.create({
+//       data: {
+//         fullName,
+//         gender,
+//         dateOfBirth: new Date(dateOfBirth),
+//         phoneNumber,
+//         city,
+//         district,
+//         address,
+//         hasVoterId,
+//         registeredPlace,
+//         wantsToChangeRegistration,
+//         newRegistrationPlace,
+//         desiredRegistrationPlace,
+//         clanTitle,
+//         clanSubtitle,
+//         //@ts-ignore
+//         registeredById: req.user.id, // 👈 link to current user
+//       },
+//     });
+
+//     res.status(201).json({
+//       message: "Voter created successfully.",
+//       voter,
+//     });
+//   } catch (error) {
+//     console.error(error);
+//     res.status(500).json({ message: "Internal server error." });
+//   }
+// };
+
+
+interface AuthRequest extends Request {
+  user?: {
+    id: number;
+    role: string;
+  };
+}
+
+/**
+ * Create a new voter (registered by the logged-in user)
+ */
+export const createVoter = async (req: AuthRequest, res: Response) => {
   try {
+    // ✅ Ensure authenticated user
+    const userId = req.user?.id;
+    if (!userId) {
+      return res.status(401).json({ message: "Unauthorized: Missing user ID" });
+    }
+
+    // ✅ Extract request data
     const {
       fullName,
       gender,
-      dateOfBirth,
+      dateOfBirth, // should be ISO string like "2005-10-06"
       phoneNumber,
       city,
       district,
       address,
-      hasVoterId,
-      registeredPlace,
-      wantsToChangeRegistration,
-      newRegistrationPlace,
-      desiredRegistrationPlace,
+      hasVoterId = false,
+      registeredPlace = null,
+      wantsToChangeRegistration = null,
+      newRegistrationPlace = null,
+      desiredRegistrationPlace = null,
       clanTitle,
       clanSubtitle,
-    } = req.body;
+    } = req.body ?? {};
 
+    // ✅ Validate required fields
     if (
       !fullName ||
       !gender ||
@@ -776,25 +871,27 @@ export const createVoter = async (req: Request, res: Response) => {
       !phoneNumber ||
       !city ||
       !district ||
-      !address ||
       !clanTitle ||
       !clanSubtitle
     ) {
-      return res
-        .status(400)
-        .json({ message: "Please provide all required fields." });
+      return res.status(400).json({
+        message:
+          "Missing required fields. Please provide fullName, gender, dateOfBirth, phoneNumber, city, district, clanTitle, and clanSubtitle.",
+      });
     }
 
-    const existing = await prisma.voter.findFirst({
+    // ✅ Check if phone number already exists
+    const existing = await prisma.voter.findUnique({
       where: { phoneNumber },
     });
 
     if (existing) {
-      return res
-        .status(409)
-        .json({ message: "A voter with this phone number already exists." });
+      return res.status(409).json({
+        message: "A voter with this phone number already exists.",
+      });
     }
 
+    // ✅ Create voter record
     const voter = await prisma.voter.create({
       data: {
         fullName,
@@ -804,25 +901,40 @@ export const createVoter = async (req: Request, res: Response) => {
         city,
         district,
         address,
-        hasVoterId,
+        hasVoterId: Boolean(hasVoterId),
         registeredPlace,
         wantsToChangeRegistration,
         newRegistrationPlace,
         desiredRegistrationPlace,
         clanTitle,
         clanSubtitle,
-        //@ts-ignore
-        registeredById: req.user.id, // 👈 link to current user
+        // ✅ Relation (Required)
+        registeredById: userId, // Option A (using FK directly)
+        // OR: registeredBy: { connect: { id: userId } }, // Option B
+      },
+      include: {
+        registeredBy: {
+          select: {
+            id: true,
+            fullName: true,
+            email: true,
+            role: true,
+          },
+        },
       },
     });
 
-    res.status(201).json({
-      message: "Voter created successfully.",
+    // ✅ Return success response
+    return res.status(201).json({
+      message: "Voter successfully registered.",
       voter,
     });
-  } catch (error) {
-    console.error(error);
-    res.status(500).json({ message: "Internal server error." });
+  } catch (error: any) {
+    console.error("❌ Error creating voter:", error);
+    return res.status(500).json({
+      message: "Server error while creating voter.",
+      error: error.message,
+    });
   }
 };
 
